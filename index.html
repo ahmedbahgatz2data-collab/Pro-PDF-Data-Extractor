@@ -10,6 +10,8 @@
     :root {
       --primary: #2563eb;
       --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --success-hover: #15803d;
       --bg: #f8fafc;
       --card-bg: #ffffff;
       --border: #e2e8f0;
@@ -50,12 +52,14 @@
     .flex-row .form-group { flex: 1; }
     .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
-    .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+    .btn-group { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
     .btn { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; flex: 1; transition: background 0.2s; }
     .btn:hover { background: var(--primary-hover); }
     .btn:disabled { background: #94a3b8; cursor: not-allowed; }
     .btn-cancel { background: var(--danger); flex: 0.3; }
     .btn-cancel:hover { background: var(--danger-hover); }
+    .btn-redownload { background: var(--success); display: none; }
+    .btn-redownload:hover { background: var(--success-hover); }
 
     .progress-container { width: 100%; background-color: #e2e8f0; border-radius: 8px; margin-top: 15px; display: none; overflow: hidden; height: 10px; }
     .progress-bar { width: 0%; height: 100%; background-color: var(--primary); transition: width 0.1s; }
@@ -105,6 +109,7 @@
     <div class="btn-group">
       <button class="btn" onclick="processPDFs()" id="btnSubmit">Extract & Download Excel (.xlsx)</button>
       <button class="btn btn-cancel" onclick="abortProcessing()" id="btnCancel" style="display: none;">Cancel</button>
+      <button class="btn btn-redownload" onclick="exportToXLSX()" id="btnRedownload"> Re-download Last Report</button>
     </div>
     
     <div class="progress-container" id="progressContainer">
@@ -121,7 +126,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     let selectedFiles = [];
-    let extractedData = [];
+    let extractedData = []; // البيانات بتفضل محفوظة هنا طالما الصفحة مفتوحة
     let isAborted = false;
     
     const CONCURRENCY_LIMIT = Math.max(4, (navigator.hardwareConcurrency || 4) * 2);
@@ -206,12 +211,14 @@
 
       const btnSubmit = document.getElementById('btnSubmit');
       const btnCancel = document.getElementById('btnCancel');
+      const btnRedownload = document.getElementById('btnRedownload');
       const progressContainer = document.getElementById('progressContainer');
       const progressBar = document.getElementById('progressBar');
       const statusMessage = document.getElementById('statusMessage');
 
       btnSubmit.disabled = true;
       btnCancel.style.display = 'inline-block';
+      btnRedownload.style.display = 'none'; // إخفاء زرار إعادة التحميل أثناء المعالجة الجديدة
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
 
@@ -262,6 +269,7 @@
         const timeInSeconds = ((performance.now() - startTime) / 1000).toFixed(2);
         statusMessage.innerText = `Done in ${timeInSeconds}s! Downloading Excel file...`;
         exportToXLSX();
+        btnRedownload.style.display = 'inline-block'; // إظهار زرار إعادة التحميل فور الانتهاء
       }
 
       resetUI();
@@ -311,7 +319,7 @@
     }
 
     function exportToXLSX() {
-      if (!extractedData.length) return;
+      if (!extractedData || !extractedData.length) return alert('No extracted data available to download.');
       const worksheet = XLSX.utils.json_to_sheet(extractedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "PDF Report");
