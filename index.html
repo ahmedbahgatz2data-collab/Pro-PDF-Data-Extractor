@@ -109,7 +109,7 @@
     <div class="btn-group">
       <button class="btn" onclick="processPDFs()" id="btnSubmit">Extract & Download Excel (.xlsx)</button>
       <button class="btn btn-cancel" onclick="abortProcessing()" id="btnCancel" style="display: none;">Cancel</button>
-      <button class="btn btn-redownload" onclick="exportToXLSX()" id="btnRedownload"> Re-download Last Report</button>
+      <button class="btn btn-redownload" onclick="exportToXLSX()" id="btnRedownload">Re-download Last Report</button>
     </div>
     
     <div class="progress-container" id="progressContainer">
@@ -126,7 +126,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     let selectedFiles = [];
-    let extractedData = []; // البيانات بتفضل محفوظة هنا طالما الصفحة مفتوحة
+    let extractedData = [];
     let isAborted = false;
     
     const CONCURRENCY_LIMIT = Math.max(4, (navigator.hardwareConcurrency || 4) * 2);
@@ -218,39 +218,57 @@
 
       btnSubmit.disabled = true;
       btnCancel.style.display = 'inline-block';
-      btnRedownload.style.display = 'none'; // إخفاء زرار إعادة التحميل أثناء المعالجة الجديدة
+      btnRedownload.style.display = 'none';
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
 
       const targetLines = extractMode === 'line_numbers' ? parseLineNumbers(rawInput) : [];
       const keywords = extractMode === 'keywords' ? rawInput.split(',').map(k => k.trim()).filter(Boolean) : [];
 
-      extractedData = new Array(selectedFiles.length);
+      extractedData = []; // إعادة تفريغ مصفوفة المخرجات لملئها بالصفوف الديناميكية
       const totalFiles = selectedFiles.length;
       let completedCount = 0;
       const startTime = performance.now();
 
-      async function worker(file, index) {
+      async function worker(file) {
         if (isAborted) return;
         try {
           const lines = await extractFastLines(file, scanMode);
-          const rowResult = { 'Index': index + 1, 'File Name': file.name };
 
           if (extractMode === 'line_numbers') {
+            const rowResult = { 'File Name': file.name };
             targetLines.forEach(lineNum => {
               rowResult[`Line ${lineNum}`] = lines[lineNum - 1] !== undefined ? lines[lineNum - 1] : '[Not Found]';
             });
+            rowResult['Total Lines'] = lines.length;
+            extractedData.push(rowResult);
+
           } else {
             keywords.forEach(kw => {
-              const matchedText = findKeywordValue(lines, kw);
-              rowResult[kw] = matchedText || '[Not Found]';
+              const matches = findAllKeywordMatches(lines, kw);
+              if (matches.length > 0) {
+                matches.forEach((matchValue, occurrenceIdx) => {
+                  extractedData.push({
+                    'File Name': file.name,
+                    'Keyword': kw,
+                    'Occurrence': occurrenceIdx + 1,
+                    'Extracted Value': matchValue,
+                    'Total Lines': lines.length
+                  });
+                });
+              } else {
+                extractedData.push({
+                  'File Name': file.name,
+                  'Keyword': kw,
+                  'Occurrence': 0,
+                  'Extracted Value': '[Not Found]',
+                  'Total Lines': lines.length
+                });
+              }
             });
           }
-
-          rowResult['Total Lines'] = lines.length;
-          extractedData[index] = rowResult;
         } catch (err) {
-          extractedData[index] = { 'Index': index + 1, 'File Name': file.name, 'Error': '[File Read Error]' };
+          extractedData.push({ 'File Name': file.name, 'Error': '[File Read Error]' });
         } finally {
           completedCount++;
           const percent = Math.round((completedCount / totalFiles) * 100);
@@ -262,30 +280,37 @@
       for (let i = 0; i < totalFiles; i += CONCURRENCY_LIMIT) {
         if (isAborted) break;
         const chunk = selectedFiles.slice(i, i + CONCURRENCY_LIMIT);
-        await Promise.all(chunk.map((file, idx) => worker(file, i + idx)));
+        await Promise.all(chunk.map(file => worker(file)));
       }
 
       if (!isAborted) {
         const timeInSeconds = ((performance.now() - startTime) / 1000).toFixed(2);
         statusMessage.innerText = `Done in ${timeInSeconds}s! Downloading Excel file...`;
         exportToXLSX();
-        btnRedownload.style.display = 'inline-block'; // إظهار زرار إعادة التحميل فور الانتهاء
+        btnRedownload.style.display = 'inline-block';
       }
 
       resetUI();
     }
 
-    function findKeywordValue(lines, keyword) {
+    function findAllKeywordMatches(lines, keyword) {
       const kwLower = keyword.toLowerCase();
+      let matches = [];
+
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].toLowerCase().includes(kwLower)) {
           const idx = lines[i].toLowerCase().indexOf(kwLower);
           const remainder = lines[i].substring(idx + keyword.length).replace(/^[:\s-]+/, '').trim();
-          if (remainder) return remainder;
-          if (lines[i + 1]) return lines[i + 1];
+          
+          if (remainder) {
+            matches.push(remainder);
+          } else if (lines[i + 1]) {
+            matches.push(lines[i + 1].trim());
+          }
         }
       }
-      return null;
+
+      return matches;
     }
 
     async function extractFastLines(file, scanMode) {
