@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pro PDF Data Extractor to XLSX</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+    }
+
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 20px; max-width: 680px; margin: 30px auto; }
+    h2 { text-align: center; color: var(--text); margin-bottom: 6px; font-weight: 700; }
+    .developer-credit { text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 600; margin-bottom: 20px; letter-spacing: 0.5px; }
+    
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.04); }
+    
+    .drop-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 30px 20px;
+      text-align: center;
+      background: #f1f5f9;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 20px;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
+    .drop-zone p { margin: 0; color: var(--text-muted); font-size: 14px; }
+    .drop-zone strong { color: var(--primary); display: block; font-size: 16px; margin-bottom: 4px; }
+    .file-count { margin-top: 8px; font-weight: 600; color: var(--primary); font-size: 13px; }
+
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+    input[type="text"], select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; outline: none; transition: border 0.2s; }
+    input[type="text"]:focus, select:focus { border-color: var(--primary); }
+    
+    .flex-row { display: flex; gap: 12px; }
+    .flex-row .form-group { flex: 1; }
+    .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+    .btn { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; flex: 1; transition: background 0.2s; }
+    .btn:hover { background: var(--primary-hover); }
+    .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-cancel { background: var(--danger); flex: 0.3; }
+    .btn-cancel:hover { background: var(--danger-hover); }
+
+    .progress-container { width: 100%; background-color: #e2e8f0; border-radius: 8px; margin-top: 15px; display: none; overflow: hidden; height: 10px; }
+    .progress-bar { width: 0%; height: 100%; background-color: var(--primary); transition: width 0.1s; }
+    
+    .status { margin-top: 12px; font-size: 13px; color: var(--text-muted); font-weight: 500; text-align: center; }
+    footer { text-align: center; margin-top: 24px; font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <h2>⚡ Pro PDF Data Extractor</h2>
+  <div class="developer-credit">Developed by ENG Ahmed Bahgat</div>
+
+  <div class="card">
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('pdfFiles').click()">
+      <strong>Drag & Drop PDF Files Here</strong>
+      <p>or click to browse your computer</p>
+      <div class="file-count" id="fileCountText"></div>
+      <input type="file" id="pdfFiles" multiple accept=".pdf" style="display: none;" onchange="updateFileCount()">
+    </div>
+
+    <div class="flex-row">
+      <div class="form-group" style="flex: 1.2;">
+        <label>Extraction Mode:</label>
+        <select id="extractMode" onchange="toggleModeInput()">
+          <option value="line_numbers">By Line Numbers (e.g. 1, 3, 5-8)</option>
+          <option value="keywords">By Keywords / Labels</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex: 1.8;">
+        <label id="inputLabel">Target Lines:</label>
+        <input type="text" id="targetInput" value="1, 3, 5" placeholder="e.g. 1, 3-5">
+        <div class="hint" id="inputHint">Examples: <code>1, 3, 5</code> or <code>1-5</code></div>
+      </div>
+    </div>
+
+    <div class="flex-row">
+      <div class="form-group">
+        <label>Scan Depth:</label>
+        <select id="scanMode">
+          <option value="first_page">First Page Only (Fastest ⚡)</option>
+          <option value="all_pages" selected>All Pages (Comprehensive)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn" onclick="processPDFs()" id="btnSubmit">Extract & Download Excel (.xlsx)</button>
+      <button class="btn btn-cancel" onclick="abortProcessing()" id="btnCancel" style="display: none;">Cancel</button>
+    </div>
+    
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="status" id="statusMessage"></div>
+  </div>
+
+  <footer>
+    Pro PDF Data Extractor &copy; Developed by ENG Ahmed Bahgat
+  </footer>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    let selectedFiles = [];
+    let extractedData = [];
+    let isAborted = false;
+    
+    const CONCURRENCY_LIMIT = Math.max(4, (navigator.hardwareConcurrency || 4) * 2);
+
+    const dropZone = document.getElementById('dropZone');
+    ['dragenter', 'dragover'].forEach(name => {
+      dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+    });
+    dropZone.addEventListener('drop', (e) => {
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+      if (files.length) {
+        selectedFiles = files;
+        updateFileCount();
+      }
+    });
+
+    function updateFileCount() {
+      const input = document.getElementById('pdfFiles');
+      if (input.files.length) selectedFiles = Array.from(input.files);
+      document.getElementById('fileCountText').innerText = selectedFiles.length 
+        ? `Selected: ${selectedFiles.length} PDF file(s)` 
+        : '';
+    }
+
+    function toggleModeInput() {
+      const mode = document.getElementById('extractMode').value;
+      const label = document.getElementById('inputLabel');
+      const input = document.getElementById('targetInput');
+      const hint = document.getElementById('inputHint');
+
+      if (mode === 'line_numbers') {
+        label.innerText = 'Target Lines:';
+        input.value = '1, 3, 5';
+        input.placeholder = 'e.g. 1, 3-5';
+        hint.innerHTML = 'Examples: <code>1, 3, 5</code> or <code>1-5</code>';
+      } else {
+        label.innerText = 'Target Keywords:';
+        input.value = 'Invoice No, Total, Date';
+        input.placeholder = 'e.g. Invoice, Total Amount, Date';
+        hint.innerHTML = 'Extracts the text/line following the keyword.';
+      }
+      savePreferences();
+    }
+
+    function parseLineNumbers(input) {
+      const lines = new Set();
+      input.split(',').forEach(part => {
+        part = part.trim();
+        if (part.includes('-')) {
+          const [s, e] = part.split('-').map(n => parseInt(n.trim()));
+          if (!isNaN(s) && !isNaN(e) && s <= e) {
+            for (let i = s; i <= e; i++) if (i > 0) lines.add(i);
+          }
+        } else {
+          const num = parseInt(part);
+          if (!isNaN(num) && num > 0) lines.add(num);
+        }
+      });
+      return Array.from(lines).sort((a, b) => a - b);
+    }
+
+    function abortProcessing() {
+      isAborted = true;
+      document.getElementById('statusMessage').innerText = 'Operation cancelled by user.';
+      resetUI();
+    }
+
+    async function processPDFs() {
+      if (!selectedFiles.length) return alert('Please select at least one PDF file.');
+      
+      const extractMode = document.getElementById('extractMode').value;
+      const rawInput = document.getElementById('targetInput').value.trim();
+      const scanMode = document.getElementById('scanMode').value;
+      
+      if (!rawInput) return alert('Please specify lines or keywords to extract.');
+
+      savePreferences();
+      isAborted = false;
+
+      const btnSubmit = document.getElementById('btnSubmit');
+      const btnCancel = document.getElementById('btnCancel');
+      const progressContainer = document.getElementById('progressContainer');
+      const progressBar = document.getElementById('progressBar');
+      const statusMessage = document.getElementById('statusMessage');
+
+      btnSubmit.disabled = true;
+      btnCancel.style.display = 'inline-block';
+      progressContainer.style.display = 'block';
+      progressBar.style.width = '0%';
+
+      const targetLines = extractMode === 'line_numbers' ? parseLineNumbers(rawInput) : [];
+      const keywords = extractMode === 'keywords' ? rawInput.split(',').map(k => k.trim()).filter(Boolean) : [];
+
+      extractedData = new Array(selectedFiles.length);
+      const totalFiles = selectedFiles.length;
+      let completedCount = 0;
+      const startTime = performance.now();
+
+      async function worker(file, index) {
+        if (isAborted) return;
+        try {
+          const lines = await extractFastLines(file, scanMode);
+          const rowResult = { 'Index': index + 1, 'File Name': file.name };
+
+          if (extractMode === 'line_numbers') {
+            targetLines.forEach(lineNum => {
+              rowResult[`Line ${lineNum}`] = lines[lineNum - 1] !== undefined ? lines[lineNum - 1] : '[Not Found]';
+            });
+          } else {
+            keywords.forEach(kw => {
+              const matchedText = findKeywordValue(lines, kw);
+              rowResult[kw] = matchedText || '[Not Found]';
+            });
+          }
+
+          rowResult['Total Lines'] = lines.length;
+          extractedData[index] = rowResult;
+        } catch (err) {
+          extractedData[index] = { 'Index': index + 1, 'File Name': file.name, 'Error': '[File Read Error]' };
+        } finally {
+          completedCount++;
+          const percent = Math.round((completedCount / totalFiles) * 100);
+          progressBar.style.width = `${percent}%`;
+          statusMessage.innerText = `Processing: ${completedCount}/${totalFiles} (${percent}%)`;
+        }
+      }
+
+      for (let i = 0; i < totalFiles; i += CONCURRENCY_LIMIT) {
+        if (isAborted) break;
+        const chunk = selectedFiles.slice(i, i + CONCURRENCY_LIMIT);
+        await Promise.all(chunk.map((file, idx) => worker(file, i + idx)));
+      }
+
+      if (!isAborted) {
+        const timeInSeconds = ((performance.now() - startTime) / 1000).toFixed(2);
+        statusMessage.innerText = `Done in ${timeInSeconds}s! Downloading Excel file...`;
+        exportToXLSX();
+      }
+
+      resetUI();
+    }
+
+    function findKeywordValue(lines, keyword) {
+      const kwLower = keyword.toLowerCase();
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes(kwLower)) {
+          const idx = lines[i].toLowerCase().indexOf(kwLower);
+          const remainder = lines[i].substring(idx + keyword.length).replace(/^[:\s-]+/, '').trim();
+          if (remainder) return remainder;
+          if (lines[i + 1]) return lines[i + 1];
+        }
+      }
+      return null;
+    }
+
+    async function extractFastLines(file, scanMode) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, disableFontFace: true, ignoreErrors: true }).promise;
+      let allLines = [];
+      const maxPages = scanMode === 'first_page' ? 1 : pdf.numPages;
+
+      for (let p = 1; p <= maxPages; p++) {
+        const page = await pdf.getPage(p);
+        const textContent = await page.getTextContent({ normalizeWhitespace: true });
+        
+        let textGroups = {};
+        for (let item of textContent.items) {
+          if (!item.str.trim()) continue;
+          let y = Math.round(item.transform[5]);
+          if (!textGroups[y]) textGroups[y] = [];
+          textGroups[y].push(item);
+        }
+
+        let sortedY = Object.keys(textGroups).sort((a, b) => b - a);
+        for (let y of sortedY) {
+          let lineItems = textGroups[y].sort((a, b) => a.transform[4] - b.transform[4]);
+          let lineText = lineItems.map(item => item.str).join(' ').trim();
+          if (lineText) allLines.push(lineText);
+        }
+        page.cleanup();
+      }
+      await pdf.destroy();
+      return allLines;
+    }
+
+    function exportToXLSX() {
+      if (!extractedData.length) return;
+      const worksheet = XLSX.utils.json_to_sheet(extractedData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "PDF Report");
+      
+      const maxCols = Object.keys(extractedData[0] || {}).map(key => ({ wch: Math.max(key.length + 5, 15) }));
+      worksheet['!cols'] = maxCols;
+
+      XLSX.writeFile(workbook, `PDF_Report_${Date.now()}.xlsx`);
+    }
+
+    function resetUI() {
+      document.getElementById('btnSubmit').disabled = false;
+      document.getElementById('btnCancel').style.display = 'none';
+    }
+
+    function savePreferences() {
+      localStorage.setItem('pdf_extract_mode', document.getElementById('extractMode').value);
+      localStorage.setItem('pdf_target_input', document.getElementById('targetInput').value);
+      localStorage.setItem('pdf_scan_mode', document.getElementById('scanMode').value);
+    }
+
+    function loadPreferences() {
+      const mode = localStorage.getItem('pdf_extract_mode');
+      const input = localStorage.getItem('pdf_target_input');
+      const scan = localStorage.getItem('pdf_scan_mode');
+
+      if (mode) document.getElementById('extractMode').value = mode;
+      toggleModeInput();
+      if (input) document.getElementById('targetInput').value = input;
+      if (scan) document.getElementById('scanMode').value = scan;
+    }
+
+    loadPreferences();
+  </script>
+</body>
+</html>
